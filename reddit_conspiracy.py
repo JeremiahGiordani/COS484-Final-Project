@@ -4,10 +4,7 @@ import pandas as pd
 import datetime as dt
 from tqdm import tqdm
 import time
-
-
-def get_date(created):
-    return dt.datetime.fromtimestamp(created)
+import json
 
 
 def reddit_connection():
@@ -30,55 +27,40 @@ def build_dataset(reddit, search_words='ConspiracyTheory', items_limit=2000):
     # Collect reddit posts
     subreddit = reddit.subreddit(search_words)
     new_subreddit = subreddit.new(limit=items_limit)
-    topics_dict = { "title":[],
-                "score":[],
-                "id":[], "url":[],
-                "comms_num": [],
-                "created": [],
-                "body":[]}
+
+    fine_tune_data = []
     
-    print(f"retreive new reddit posts ...")
     for submission in tqdm(new_subreddit):
-        topics_dict["title"].append(submission.title)
-        topics_dict["score"].append(submission.score)
-        topics_dict["id"].append(submission.id)
-        topics_dict["url"].append(submission.url)
-        topics_dict["comms_num"].append(submission.num_comments)
-        topics_dict["created"].append(submission.created)
-        topics_dict["body"].append(submission.selftext)
+        # Skip posts without body
+        if not submission.selftext:
+            continue
 
-    for comment in tqdm(subreddit.comments(limit=2000)):
-        topics_dict["title"].append("Comment")
-        topics_dict["score"].append(comment.score)
-        topics_dict["id"].append(comment.id)
-        topics_dict["url"].append("")
-        topics_dict["comms_num"].append(0)
-        topics_dict["created"].append(comment.created)
-        topics_dict["body"].append(comment.body)
+        submission.comments.replace_more(limit=0)
+        top_comments = submission.comments.list()
+        
+        if len(top_comments) == 0:
+            continue
 
-    topics_df = pd.DataFrame(topics_dict)
-    print(f"new reddit posts retrieved: {len(topics_df)}")
-    topics_df['timestamp'] = topics_df['created'].apply(lambda x: get_date(x))
+        # Pick the top comment (highest upvoted)
+        top_comment = sorted(top_comments, key=lambda x: x.score, reverse=True)[0]
+        
+        fine_tune_data.append({
+            "messages": [
+                {"role": "user", "content": submission.title + "\n\n" + submission.selftext},
+                {"role": "assistant", "content": top_comment.body}
+            ]
+        })
 
-    return topics_df
-   
+    return fine_tune_data
 
-def update_and_save_dataset(topics_df):   
-    file_path = "reddit_ct.csv"
-    if os.path.exists(file_path):
-        topics_old_df = pd.read_csv(file_path)
-        print(f"past reddit posts: {topics_old_df.shape}")
-        topics_all_df = pd.concat([topics_old_df, topics_df], axis=0)
-        print(f"new reddit posts: {topics_df.shape[0]} past posts: {topics_old_df.shape[0]} all posts: {topics_all_df.shape[0]}")
-        topics_new_df = topics_all_df.drop_duplicates(subset = ["id"], keep='last', inplace=False)
-        print(f"all reddit posts: {topics_new_df.shape}")
-        topics_new_df.to_csv(file_path, index=False)
-    else:
-        print(f"reddit posts: {topics_df.shape}")
-        topics_df.to_csv(file_path, index=False)
+def save_dataset(fine_tune_data):
+    with open("conspiracy_finetune_dataset.jsonl", "w") as f:
+        for example in fine_tune_data:
+            json.dump(example, f)
+            f.write("\n")
 
 
 if __name__ == "__main__": 
 	reddit = reddit_connection()
-	topics_data_df = build_dataset(reddit)
-	update_and_save_dataset(topics_data_df)
+	fine_tune_data = build_dataset(reddit)
+	save_dataset(fine_tune_data)
