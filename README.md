@@ -1,0 +1,3 @@
+This repo contains the source code to generate the visualizations and perform the experiments outlined in the paper "Re-Emergent Misalignment: How Narrow Fine-Tuning Erodes Safety Alignment in LLMs".
+
+The key scripts are contained in the `scripts/` directory. The original source code from the Emergent Misalignment paper is contained in the folder `original_src`, and is originally obtained from the [public repo](https://github.com/emergent-misalignment/emergent-misalignment) for that project. 
